@@ -1,0 +1,131 @@
+<?php
+
+require_once("common.INC.PHP");
+
+
+/* TODO ignore compositing operators and escape sequences and other invisible characters when \b-ing */
+/* assumes UTF-8 */
+
+$input_URL_name = $_SERVER["PATH_INFO"]; // TODO strip all the non-name parts.
+$input_file_name = $_SERVER["PATH_TRANSLATED"];
+$input_file = fopen($input_file_name, "r");
+$input_line_boldness = array();
+$input_line = array();
+$X = 0;
+$previous_boldness = 0;
+chdir(dirname($input_file_name)); // FIXME remove?
+
+print_page_header();
+
+function write_input_line() {
+	global $input_line;
+	global $input_line_boldness;
+	global $previous_boldness;
+	for($index = 0; $index < count($input_line); ++$index) {
+		$input = $input_line[$index];
+		$boldness = $input_line_boldness[$index];
+		if ($boldness != $previous_boldness) {
+			if ($boldness > 0) {
+				print "<b>";
+			} else {
+				print "</b>";
+			}
+			$previous_boldness = $boldness;
+		}
+		// TODO HTML special chars.
+		if($input == chr(9)) { /* tab */
+			print "</td><td>";
+		} else if($input == "<") {
+			print "&lt;";
+		} else if($input == ">") {
+			print "&gt;";
+		} else if($input == "&") {
+			print "&amp;";
+		} else
+			print $input;
+	}
+	if($previous_boldness > 0) {
+		print "</b>";
+	}
+}
+
+function parse_file($input_file) {
+	global $input_line;
+	global $input_line_boldness;
+	global $B_in_table;
+	$B_previous_tabulator = false;
+	$B_in_table = false;
+	$B_in_headline = true;
+	
+	while (($line = fgets($input_file)) !== false) {
+		if (substr($line, 0, 1) == "=" && !$B_in_table) {
+			print "<h2>";
+			$line = trim(substr($line, 1));
+			$B_in_headline = true;
+			$B_tabulator = false;
+		} else {
+			$B_tabulator = strchr($line, "\t") !== false;
+			if($B_tabulator != $B_previous_tabulator) {
+				if($B_tabulator) {
+					print "<table class=\"plain_text\">";
+					$B_in_table = true;
+				} else {
+					print "</table>";
+					$B_in_table = false;
+				}
+				$B_previous_tabulator = $B_tabulator;
+			}
+		}
+		if($B_in_table) {
+			print "<tr><td>";
+		}
+		$input_line_boldness = array();
+		$X = 0;
+		$input_line = array(); /* as on screen */
+		$B_has_newline = false;
+		for ($i = 0; $i < strlen($line); ++$i) {
+			$input = substr($line, $i, 1);
+			if ($input == chr(8)) { /* backspace */
+				$X = $X - 1;
+				while($X > 0) {
+					$input = $input_line[$X];
+					if(ord($input) < 0x80 || ord($input) >= 0xC0) /* starting char. */
+						break;
+					$X = $X - 1;
+				}
+			} else if($input == chr(10)) {
+				$B_has_newline = true;
+			} else if($input == chr(13)) {
+				continue;
+			} else {
+				if($X < count($input_line_boldness)) {
+					if($input_line[$X] == $input) {
+						$input_line_boldness[$X] = $input_line_boldness[$X] + 1;
+					} else {
+						$input_line[$X] = $input;
+					}
+				} else {
+					array_push($input_line, $input);
+					array_push($input_line_boldness, 0);
+				}
+				$X = $X + 1;
+			}
+		}
+		write_input_line();
+		if($B_in_headline) {
+			print "</h2>\n";
+			$B_in_headline = false;
+		} else if($B_in_table) {
+			print "</td></tr>\n";
+		} else if($B_has_newline) {
+			print "<br/>\n";
+		}
+	}
+	if($B_in_table) {
+		print "</table>";
+	}
+}
+
+parse_file($input_file);
+
+?>

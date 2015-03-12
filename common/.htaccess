@@ -1,0 +1,12 @@
+
+<Files "thumbnail">
+  ForceType application/x-httpd-php
+</Files>
+
+<Files "framed">
+  ForceType application/x-httpd-php
+</Files>
+
+<Files "404">
+  ForceType text/html
+</Files>

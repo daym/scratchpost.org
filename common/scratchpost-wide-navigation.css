@@ -1,0 +1,18 @@
+
+@import url(scratchpost.css);
+
+div.main_navigation {
+	width: 90%;
+	float: none;
+}
+
+div.main_border {
+        /*padding-left: 7px;*/
+        display:block;
+        position: relative;
+        left: 0px;
+        /* ^--- note that the javascript code will mess with the left
+                setting */
+
+        /*border-left: 1px solid black;*/
+}

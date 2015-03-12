@@ -1,0 +1,1506 @@
+<?php
+
+// see <http://www.biblioscape.com/rtf15_spec.htm>
+
+/* TODO font fcharset */
+
+/*
+In practice, an RTF reader will evaluate each character it reads in sequence as follows: 
+If the character is an opening brace ({), the reader stores its current state on the stack. If the character is a closing brace (}), the reader retrieves the current state from the stack.
+If the character is a backslash (\), the reader collects the control word or control symbol and its parameter, if any, and looks up the control word or control symbol in a table that maps control words to actions. It then carries out the action prescribed in the table. (The possible actions are discussed below.) The read pointer is left before or after a control-word delimiter, as appropriate.
+If the character is anything other than an opening brace ({), closing brace (}), or backslash (\), the reader assumes that the character is plain text and writes the character to the current destination using the current formatting properties.
+
+\*
+Type	Description
+Flag	This control word ignores any parameter.
+Destination	This control word starts a group or destination. It ignores any parameter.
+Symbol	This control word represents a special character.
+Toggle	This control word distinguishes between the ON and OFF states for the given property. The control word with no parameter or a nonzero parameter is used to turn on the property, while the control word with a zero parameter is used to turn it off.
+Value	This control word requires a parameter.
+
+*/
+/*
+\{ewc MVBMP2, ViewerBMP2, !neu002.bmp\}
+*/
+/*
+strange section headers:
+{\up +}{\footnote\pard\plain{\up +} BROWSE0001:0005}
+{\up $}{\footnote\pard\plain{\up $} Welche Dienste sollte man in Anspruch nehmen ?}
+{\up #}{\footnote\pard\plain{\up #} WelcheDienste}
+\pard\keepn\sb115\li225 {\up K}{\footnote\pard\plain{\up K} 0:BIOS}
+\f3\fs30 1.2 Das Drei-Schichten-Modell\fs16 
+
+*/
+
+/*
+The delimiter marks the end of an RTF control word, and can be one of the following: 
+A space. In this case, the space is part of the control word.
+A digit or a hyphen (-), which indicates that a numeric parameter follows. The subsequent digital sequence is then delimited by a space or any character other than a letter or a digit. The parameter can be a positive or a negative number. The range of the values for the number is generally –32767 through 32767. However, Word tends to restrict the range to –31680 through 31680. Word allows values in the range -2,147,483,648 to 2,147,483,648 for a small number of keywords (specifically \bin, \revdttm, and some picture properties). An RTF parser must handle an arbitrary string of digits as a legal value for a keyword. If a numeric parameter immediately follows the control word, this parameter becomes part of the control word. The control word is then delimited by a space or a nonalphabetic or nonnumeric character in the same manner as any other control word.
+Any character other than a letter or a digit. In this case, the delimiting character terminates the control word but is not actually part of the control word.
+
+If a space delimits the control word, the space does not appear in the document. Any characters following the delimiter, including spaces, will appear in the document. For this reason, you should use spaces only where necessary; do not use spaces merely to break up RTF code.
+
+{\rtf\ansi\deff0{\fonttbl{\f0\froman Tms Rmn;}{\f1\fdecor 
+Symbol;}{\f2\fswiss Helv;}}{\colortbl;\red0\green0\blue0;
+\red0\green0\blue255;\red0\green255\blue255;\red0\green255\
+blue0;\red255\green0\blue255;\red255\green0\blue0;\red255\
+green255\blue0;\red255\green255\blue255;}{\stylesheet{\fs20 
+\snext0Normal;}}{\info{\author John Doe}
+{\creatim\yr1990\mo7\dy30\hr10\min48}{\version1}{\edmins0}
+{\nofpages1}{\nofwords0}{\nofchars0}{\vern8351}}\widoctrl\ftnbj \sectd\linex0\endnhere \pard\plain \fs20 This is plain text.\par}
+
+\[a-zA-Z][a-zA-Z]*[ -0-9]*
+eat space.
+\<x>
+
+limit to 32 characters.
+{}
+
+*/
+/*
+
+Control
+Word	Described in Section	Type
+\'	Special Characters	Symbol
+\-	Special Characters	Symbol
+\*	Special Characters	Symbol
+\:	Special Characters	Symbol
+\\	Special Characters	Symbol
+\_	Special Characters	Symbol
+\{	Special Characters	Symbol
+\|	Special Characters	Symbol
+\}	Special Characters	Symbol
+\~	Special Characters	Symbol
+\ab	Associated Character Properties	Toggle
+\absh	Positioned Objects and Frames	Value
+\abslock *	Positioned Objects and Frames	Flag
+\absnoovrlpN ***	Positioned Objects and Frames	Toggle
+\absw	Positioned Objects and Frames	Value
+\acaps	Associated Character Properties	Toggle
+\acccomma *	Font (Character) Formatting Properties	Toggle
+\accdot *	Font (Character) Formatting Properties	Toggle
+\accnone *	Font (Character) Formatting Properties	Toggle
+\acf	Associated Character Properties	Value
+\additive 	Style Sheet	Flag
+\adjustright **	Section Formatting Properties	Flag
+\adn	Associated Character Properties	Value
+\aenddoc 	Document formatting properties	Flag
+\aendnotes 	Document formatting properties	Flag
+\aexpnd	Associated Character Properties	Value
+\af	Associated Character Properties	Value
+\affixed *	Paragraph Formatting Properties	Flag
+\afs	Associated Character Properties	Value
+\aftnbj 	Document formatting properties	Flag
+\aftncn 	Document formatting properties	Destination
+\aftnnalc 	Document formatting properties	Flag
+\aftnnar 	Document formatting properties	Flag
+\aftnnauc 	Document formatting properties	Flag
+\aftnnchi 	Document formatting properties	Flag
+\aftnnchosung **	Document formatting properties	Flag
+\aftnncnum **	Document formatting properties	Flag
+\aftnndbar **	Document formatting properties	Flag
+\aftnndbnum **	Document formatting properties	Flag
+\aftnndbnumd **	Document formatting properties	Flag
+\aftnndbnumk **	Document formatting properties	Flag
+\aftnndbnumt **	Document formatting properties	Flag
+\aftnnganada **	Document formatting properties	Flag
+\aftnngbnum **	Document formatting properties	Flag
+\aftnngbnumd **	Document formatting properties	Flag
+\aftnngbnumk **	Document formatting properties	Flag
+\aftnngbnuml **	Document formatting properties	Flag
+\aftnnrlc 	Document formatting properties	Flag
+\aftnnruc 	Document formatting properties	Flag
+\aftnnzodiac **	Document formatting properties	Flag
+\aftnnzodiacd **	Document formatting properties	Flag
+\aftnnzodiacl **	Document formatting properties	Flag
+\aftnrestart 	Document formatting properties	Flag
+\aftnrstcont 	Document formatting properties	Flag
+\aftnsep 	Document formatting properties	Destination
+\aftnsepc 	Document formatting properties	Destination
+\aftnstart 	Document formatting properties	Value
+\aftntj 	Document formatting properties	Flag
+\ai	Associated Character Properties	Toggle
+\alang	Associated Character Properties	Value
+\allprot 	Document formatting properties	Flag
+\alntblind ***	Document formatting properties	Flag
+\alt	Style Sheet	Flag
+\animtextN **	Font (Character) Formatting Properties	Value
+\annotation	Comments (Annotations)	Destination
+\annotprot 	Document formatting properties	Flag
+\ansi	Character Set	Flag
+\ansicpgN **	Unicode RTF	Value
+\aoutl	Associated Character Properties	Toggle
+\ascaps	Associated Character Properties	Toggle
+\ashad	Associated Character Properties	Toggle
+\aspalpha *	Paragraph Formatting Properties	Toggle
+\aspnum *	Paragraph Formatting Properties	Toggle
+\astrike	Associated Character Properties	Toggle
+\atnauthor 	Comments (Annotations)	Destination
+\atnicn	Comments (Annotations)	Destination
+\atnid	Comments (Annotations)	Destination
+\atnref 	Comments (Annotations)	Destination
+\atntime	Comments (Annotations)	Destination
+\atrfend 	Comments (Annotations)	Destination
+\atrfstart 	Comments (Annotations)	Destination
+\aul	Associated Character Properties	Toggle
+\auld	Associated Character Properties	Toggle
+\auldb	Associated Character Properties	Toggle
+\aulnone	Associated Character Properties	Toggle
+\aulw	Associated Character Properties	Toggle
+\aup	Associated Character Properties	Value
+\author	Information Group	Destination
+\b	Font (Character) Formatting Properties	Toggle
+\background **	Word 97-2000 RTF for Drawing Objects (Shapes)	Destination
+\bdbfhdr **	Document formatting properties	Flag
+\bdrrlswsix ***	Document formatting properties	Flag
+\bgbdiag	Paragraph Shading	Flag
+\bgcross	Paragraph Shading	Flag
+\bgdcross	Paragraph Shading	Flag
+\bgdkbdiag	Paragraph Shading	Flag
+\bgdkcross	Paragraph Shading	Flag
+\bgdkdcross	Paragraph Shading	Flag
+\bgdkfdiag	Paragraph Shading	Flag
+\bgdkhoriz	Paragraph Shading	Flag
+\bgdkvert	Paragraph Shading	Flag
+\bgfdiag	Paragraph Shading	Flag
+\bghoriz	Paragraph Shading	Flag
+\bgvert	Paragraph Shading	Flag
+\bin	Pictures	Value
+\binfsxn	Section Formatting Properties	Value
+\binsxn	Section Formatting Properties	Value
+\bkmkcolf	Bookmarks	Value
+\bkmkcoll	Bookmarks	Value
+\bkmkend	Bookmarks	Destination
+\bkmkpub	Macintosh Edition Manager Publisher Objects	Flag
+\bkmkstart	Bookmarks	Destination
+\bliptagN **	Pictures	Value
+\blipuid **	Pictures	Value
+\blipupiN **	Pictures	Value
+\blue	Color Table	Value
+\box	Paragraph Borders	Flag
+\brdrartN **	Document formatting properties	Value
+\brdrb	Paragraph Borders	Flag
+\brdrbar	Paragraph Borders	Flag
+\brdrbtw	Paragraph Borders	Flag
+\brdrcf	Paragraph Borders	Value
+\brdrdash 	Paragraph Borders	Flag
+\brdrdashd **	Paragraph Text	Flag
+\brdrdashdd **	Paragraph Text	Flag
+\brdrdashdotstr **	Paragraph Text	Flag
+\brdrdashsm **	Paragraph Text	Flag
+\brdrdb	Paragraph Borders	Flag
+\brdrdot	Paragraph Borders	Flag
+\brdremboss **	Paragraph Text	Flag
+\brdrengrave **	Paragraph Text	Flag
+\brdrframe **	Paragraph Borders	Flag
+\brdrhair	Paragraph Borders	Flag
+\brdrinset ***	Paragraph Text	Flag
+\brdrl	Paragraph Borders	Flag
+\brdroutset ***	Paragraph Text	Flag
+\brdrr	Paragraph Borders	Flag
+\brdrs	Paragraph Borders	Flag
+\brdrsh	Paragraph Borders	Flag
+\brdrt	Paragraph Borders	Flag
+\brdrth	Paragraph Borders	Flag
+\brdrthtnlg **	Paragraph Text	Flag
+\brdrthtnmg **	Paragraph Text	Flag
+\brdrthtnsg **	Paragraph Text	Flag
+\brdrtnthlg **	Paragraph Text	Flag
+\brdrtnthmg **	Paragraph Text	Flag
+\brdrtnthsg **	Paragraph Text	Flag
+\brdrtnthtnlg **	Paragraph Text	Flag
+\brdrtnthtnmg **	Paragraph Text	Flag
+\brdrtnthtnsg **	Paragraph Text	Flag
+\brdrtriple **	Paragraph Text	Flag
+\brdrw	Paragraph Borders	Value
+\brdrwavy **	Paragraph Text	Flag
+\brdrwavydb **	Paragraph Text	Flag
+\brkfrm 	Document formatting properties	Flag
+\brsp	Paragraph Borders	Value
+\bullet	Special Characters	Symbol
+\buptim	Information Group	Destination
+\bxe	Index Entries	Flag
+\caps	Font (Character) Formatting Properties	Toggle
+\category *	Information Group	Destination
+\cb	Font (Character) Formatting Properties	Value
+\cbpat	Paragraph Shading	Value
+\cchs 	Font (Character) Formatting Properties	Value
+\cell	Special Characters	Symbol
+\cellx	Table Definitions	Value
+\cf	Font (Character) Formatting Properties	Value
+\cfpat	Paragraph Shading	Value
+\cgridN **	Font (Character) Formatting Properties	Value
+\charscalex *	Font (Character) Formatting Properties	Value
+\charscalexN **	Character Text	Value
+\chatn	Special Characters	Symbol
+\chbgbdiag **	Character Text	Flag
+\chbgcross **	Character Text	Flag
+\chbgdcross **	Character Text	Flag
+\chbgdkbdiag **	Character Text	Flag
+\chbgdkcross **	Character Text	Flag
+\chbgdkdcross **	Character Text	Flag
+\chbgdkfdiag **	Character Text	Flag
+\chbgdkhoriz **	Character Text	Flag
+\chbgdkvert **	Character Text	Flag
+\chbgfdiag **	Character Text	Flag
+\chbghoriz **	Character Text	Flag
+\chbgvert **	Character Text	Flag
+\chbrdr **	Character Text	Flag
+\chcbpatN **	Character Text	Value
+\chcfpatN **	Character Text	Value
+\chdate	Special Characters	Symbol
+\chdpa	Special Characters	Symbol
+\chdpl	Special Characters	Symbol
+\chftn	Special Characters	Symbol
+\chftnsep	Special Characters	Symbol
+\chftnsepc	Special Characters	Symbol
+\chpgn	Special Characters	Symbol
+\chshdngN **	Character Text	Value
+\chtime	Special Characters	Symbol
+\clbgbdiag	Table Definitions	Flag
+\clbgcross	Table Definitions	Flag
+\clbgdcross	Table Definitions	Flag
+\clbgdkbdiag	Table Definitions	Flag
+\clbgdkcross	Table Definitions	Flag
+\clbgdkdcross	Table Definitions	Flag
+\clbgdkfdiag	Table Definitions	Flag
+\clbgdkhor	Table Definitions	Flag
+\clbgdkvert	Table Definitions	Flag
+\clbgfdiag	Table Definitions	Flag
+\clbghoriz	Table Definitions	Flag
+\clbgvert	Table Definitions	Flag
+\clbrdrb	Table Definitions	Flag
+\clbrdrl	Table Definitions	Flag
+\clbrdrr	Table Definitions	Flag
+\clbrdrt	Table Definitions	Flag
+\clcbpat	Table Definitions	Value
+\clcfpat	Table Definitions	Value
+\cldgll *	Table Definitions	Flag
+\cldglu *	Table Definitions	Flag
+\clFitText ***	Table Definitions	Flag
+\clftsWidthN ***	Table Definitions	Value
+\clmgf	Table Definitions	Flag
+\clmrg	Table Definitions	Flag
+\clNoWrap ***	Table Definitions	Flag
+\clpadbN ***	Table Definitions	Value
+\clpadfbN ***	Table Definitions	Value
+\clpadflN ***	Table Definitions	Value
+\clpadfrN ***	Table Definitions	Value
+\clpadftN ***	Table Definitions	Value
+\clpadlN ***	Table Definitions	Value
+\clpadrN ***	Table Definitions	Value
+\clpadtN ***	Table Definitions	Value
+\clshdng	Table Definitions	Value
+\cltxbtlr *	Table Definitions	Flag
+\cltxlrtb *	Table Definitions	Flag
+\cltxlrtb **	Table Definitions	Flag
+\cltxlrtbv *	Table Definitions	Flag
+\cltxtbrl **	Table Definitions	Flag
+\cltxtbrl *	Table Definitions	Flag
+\cltxtbrlv *	Table Definitions	Flag
+\clvertalb *	Table Definitions	Flag
+\clvertalc *	Table Definitions	Flag
+\clvertalt *	Table Definitions	Flag
+\clvmgf *	Table Definitions	Flag
+\clvmrg *	Table Definitions	Flag
+\clwWidthN ***	Table Definitions	Value
+\collapsed	Paragraph Formatting Properties	Flag
+\colno 	Section Formatting Properties	Value
+\colortbl	Color Table	Destination
+\cols	Section Formatting Properties	Value
+\colsr 	Section Formatting Properties	Value
+\colsx	Section Formatting Properties	Value
+\column	Special Characters	Symbol
+\colw 	Section Formatting Properties	Value
+\comment	Information Group	Destination
+\company *	Information Group	Destination
+\cpg	Code Page Support	Value
+\crauthN **	Character Text	Value
+\crdateN **	Character Text	Value
+\creatim	Information Group	Destination
+\cs	Font (Character) Formatting Properties	Value
+\ctrl	Style Sheet	Flag
+\ctsN ***	Document formatting properties	Value
+\cufiN ***	Paragraph Formatting Properties	Value
+\culiN ***	Paragraph Formatting Properties	Value
+\curiN ***	Paragraph Formatting Properties	Value
+\cvmme 	Document formatting properties	Flag
+\datafield 	Fields	Destination
+\date **	Fields	Flag
+\dbch *	Associated Character Properties	Flag
+\deff	Font Table	Value
+\defformat	Document formatting properties	Flag
+\deflang	Document formatting properties	Value
+\deflangfe **	Document formatting properties	Value
+\defshp ***	Pictures	Flag
+\deftab	Document formatting properties	Value
+\deleted	Font (Character) Formatting Properties	Toggle
+\dfrauthN **	Paragraph Text	Value
+\dfrdateN **	Paragraph Text	Value
+\dfrmtxtx	Positioned Objects and Frames	Value
+\dfrmtxty	Positioned Objects and Frames	Value
+\dfrstart **	Paragraph Text	Value
+\dfrstop **	Paragraph Text	Value
+\dfrxst **	Paragraph Text	Value
+\dghoriginN *	Document formatting properties	Value
+\dghshowN *	Document formatting properties	Value
+\dghspaceN *	Document formatting properties	Value
+\dgmargin **	Document formatting properties	Flag
+\dgsnap *	Document formatting properties	Flag
+\dgvoriginN *	Document formatting properties	Value
+\dgvshowN *	Document formatting properties	Value
+\dgvspaceN *	Document formatting properties	Value
+\dibitmap	Pictures	Value
+\dn	Font (Character) Formatting Properties	Value
+\dntblnsbdb **	Document formatting properties	Flag
+\do 	Drawing Objects	Destination
+\dobxcolumn 	Drawing Objects	Flag
+\dobxmargin 	Drawing Objects	Flag
+\dobxpage 	Drawing Objects	Flag
+\dobymargin 	Drawing Objects	Flag
+\dobypage 	Drawing Objects	Flag
+\dobypara 	Drawing Objects	Flag
+\doccomm	Information Group	Destination
+\doctemp	Document formatting properties	Flag
+\doctypeN **	Document formatting properties	Value
+\docvar *	Document Variables	Destination
+\dodhgt 	Drawing Objects	Value
+\dolock 	Drawing Objects	Flag
+\dpaendhol 	Drawing Objects	Flag
+\dpaendl 	Drawing Objects	Value
+\dpaendsol 	Drawing Objects	Flag
+\dpaendw 	Drawing Objects	Value
+\dparc 	Drawing Objects	Flag
+\dparcflipx 	Drawing Objects	Flag
+\dparcflipy 	Drawing Objects	Flag
+\dpastarthol 	Drawing Objects	Flag
+\dpastartl 	Drawing Objects	Value
+\dpastartsol 	Drawing Objects	Flag
+\dpastartw 	Drawing Objects	Value
+\dpcallout 	Drawing Objects	Flag
+\dpcoa 	Drawing Objects	Value
+\dpcoaccent 	Drawing Objects	Flag
+\dpcobestfit 	Drawing Objects	Flag
+\dpcoborder 	Drawing Objects	Flag
+\dpcodabs 	Drawing Objects	Value
+\dpcodbottom 	Drawing Objects	Flag
+\dpcodcenter 	Drawing Objects	Flag
+\dpcodescent	Drawing Objects	Value
+\dpcodtop 	Drawing Objects	Flag
+\dpcolength 	Drawing Objects	Value
+\dpcominusx 	Drawing Objects	Flag
+\dpcominusy 	Drawing Objects	Flag
+\dpcooffset 	Drawing Objects	Value
+\dpcosmarta 	Drawing Objects	Flag
+\dpcotdouble 	Drawing Objects	Flag
+\dpcotright 	Drawing Objects	Flag
+\dpcotsingle 	Drawing Objects	Flag
+\dpcottriple 	Drawing Objects	Flag
+\dpcount 	Drawing Objects	Value
+\dpellipse 	Drawing Objects	Flag
+\dpendgroup 	Drawing Objects	Flag
+\dpfillbgcb 	Drawing Objects	Value
+\dpfillbgcg 	Drawing Objects	Value
+\dpfillbgcr 	Drawing Objects	Value
+\dpfillbggray 	Drawing Objects	Value
+\dpfillbgpal 	Drawing Objects	Flag
+\dpfillfgcb 	Drawing Objects	Value
+\dpfillfgcg 	Drawing Objects	Value
+\dpfillfgcr 	Drawing Objects	Value
+\dpfillfggray 	Drawing Objects	Value
+\dpfillfgpal 	Drawing Objects	Flag
+\dpfillpat 	Drawing Objects	Value
+\dpgroup 	Drawing Objects	Flag
+\dpline 	Drawing Objects	Flag
+\dplinecob 	Drawing Objects	Value
+\dplinecog 	Drawing Objects	Value
+\dplinecor 	Drawing Objects	Value
+\dplinedado 	Drawing Objects	Flag
+\dplinedadodo 	Drawing Objects	Flag
+\dplinedash 	Drawing Objects	Flag
+\dplinedot 	Drawing Objects	Flag
+\dplinegray 	Drawing Objects	Value
+\dplinehollow 	Drawing Objects	Flag
+\dplinepal 	Drawing Objects	Flag
+\dplinesolid 	Drawing Objects	Flag
+\dplinew 	Drawing Objects	Value
+\dppolycount 	Drawing Objects	Value
+\dppolygon 	Drawing Objects	Flag
+\dppolyline 	Drawing Objects	Flag
+\dpptx 	Drawing Objects	Value
+\dppty 	Drawing Objects	Value
+\dprect 	Drawing Objects	Flag
+\dproundr 	Drawing Objects	Flag
+\dpshadow 	Drawing Objects	Flag
+\dpshadx 	Drawing Objects	Value
+\dpshady 	Drawing Objects	Value
+\dptxbtlr *	Drawing Objects	Flag
+\dptxbx 	Drawing Objects	Flag
+\dptxbxmar 	Drawing Objects	Value
+\dptxbxtext 	Drawing Objects	Destination
+\dptxlrtb *	Drawing Objects	Flag
+\dptxlrtbv *	Drawing Objects	Flag
+\dptxtbrl *	Drawing Objects	Flag
+\dptxtbrlv *	Drawing Objects	Flag
+\dpx 	Drawing Objects	Value
+\dpxsize 	Drawing Objects	Value
+\dpy 	Drawing Objects	Value
+\dpysize 	Drawing Objects	Value
+\dropcapli 	Positioned Objects and Frames	Value
+\dropcapt 	Positioned Objects and Frames	Value
+\ds	Section Formatting Properties	Value
+\dxfrtext	Positioned Objects and Frames	Value
+\dy	Information Group	Value
+\edmins	Information Group	Value
+\embo **	Character Text	Toggle
+\emdash	Special Characters	Symbol
+\emfblip **	Pictures	Flag
+\emspace 	Special Characters	Symbol
+\endash	Special Characters	Symbol
+\enddoc	Document formatting properties	Flag
+\endnhere	Section Formatting Properties	Flag
+\endnotes	Document formatting properties	Flag
+\enspace 	Special Characters	Symbol
+\expnd	Font (Character) Formatting Properties	Value
+\expndtw 	Font (Character) Formatting Properties	Value
+\expshrtn **	Document formatting properties	Flag
+\f	Font (Character) Formatting Properties	Value
+\faauto **	Paragraph Formatting Properties	Value
+\facenter *	Paragraph Formatting Properties	Flag
+\facingp	Document formatting properties	Flag
+\fahang *	Paragraph Formatting Properties	Flag
+\falt 	Font Table	Destination
+\faroman *	Paragraph Formatting Properties	Flag
+\favar *	Paragraph Formatting Properties	Flag
+\fbiasN **	Font Table	Value
+\fbidi	Font Table	Flag
+\fchars *	Document formatting properties	Destination
+\fcharset 	Font Table	Value
+\fdecor	Font Table	Flag
+\fet 	Document formatting properties	Value
+\fetch	Font Table	Flag
+\ffdefres **	Form Fields	Value
+\ffdeftext **	Form Fields	Destination
+\ffentrymcr **	Form Fields	Destination
+\ffexitmcr **	Form Fields	Destination
+\ffformat **	Form Fields	Destination
+\ffhaslistboxN **	Form Fields	Value
+\ffhelptext **	Form Fields	Destination
+\ffhpsN **	Form Fields	Value
+\ffl **	Form Fields	Destination
+\ffmaxlen **	Form Fields	Value
+\ffname **	Form Fields	Destination
+\ffownhelpN **	Form Fields	Value
+\ffownstatN **	Form Fields	Value
+\ffprotN **	Form Fields	Value
+\ffrecalcN **	Form Fields	Value
+\ffresN **	Form Fields	Value
+\ffsizeN **	Form Fields	Value
+\ffstattext **	Form Fields	Destination
+\fftypeN **	Form Fields	Value
+\fftypetxtN **	Form Fields	Value
+\fi	Paragraph Formatting Properties	Value
+\fid 	File Table	Value
+\field	Fields	Destination
+\file 	File Table	Destination
+\filetbl 	File Table	Destination
+\fittextN ***	Font (Character) Formatting Properties	Value
+\fldalt 	Document formatting properties	Flag
+\flddirty	Fields	Flag
+\fldedit	Fields	Flag
+\fldinst	Fields	Destination
+\fldlock	Fields	Flag
+\fldpriv	Fields	Flag
+\fldrslt	Fields	Destination
+\fldtype **	Fields	Destination
+\fmodern	Font Table	Flag
+\fn	Style Sheet	Value
+\fname *	Font Table	Destination
+\fnetwork 	File Table	Flag
+\fnil	File Table	Flag
+\fontemb	Font Table	Destination
+\fontfile	Font Table	Destination
+\fonttbl	Font Table	Destination
+\footer	Headers and Footers	Destination
+\footer	Headers and Footers	Destination
+\footerf	Headers and Footers	Destination
+\footerl	Headers and Footers	Destination
+\footery	Section Formatting Properties	Value
+\footnote	Footnotes	Destination
+\formdisp 	Document formatting properties	Flag
+\formfield **	Form Fields	Destination
+\formprot 	Document formatting properties	Flag
+\formshade 	Document formatting properties	Flag
+\fosnum 	File Table	Value
+\fprq 	Font Table	Value
+\fracwidth	Document formatting properties	Flag
+\frelative 	File Table	Value
+\frmtxbtlr *	Positioned Objects and Frames	Flag
+\frmtxlrtb *	Positioned Objects and Frames	Flag
+\frmtxlrtbv *	Positioned Objects and Frames	Flag
+\frmtxtbrl *	Positioned Objects and Frames	Flag
+\frmtxtbrlv *	Positioned Objects and Frames	Flag
+\froman	Font Table	Flag
+\fromhtml **	Document formatting properties	Flag
+\fromtext **	Document formatting properties	Flag
+\fs	Font (Character) Formatting Properties	Value
+\fscript	Font Table	Flag
+\fswiss	Font Table	Flag
+\ftnalt 	Document formatting properties	Flag
+\ftnbj	Document formatting properties	Flag
+\ftncn	Document formatting properties	Destination
+\ftnil	Font Table	Flag
+\ftnlytwnine ***	Document formatting properties	Flag
+\ftnnalc 	Document formatting properties	Flag
+\ftnnar 	Document formatting properties	Flag
+\ftnnauc 	Document formatting properties	Flag
+\ftnnchi 	Document formatting properties	Flag
+\ftnnchosung **	Document formatting properties	Flag
+\ftnncnum **	Document formatting properties	Flag
+\ftnndbar **	Document formatting properties	Flag
+\ftnndbnum **	Document formatting properties	Flag
+\ftnndbnumd **	Document formatting properties	Flag
+\ftnndbnumk **	Document formatting properties	Flag
+\ftnndbnumt **	Document formatting properties	Flag
+\ftnnganada **	Document formatting properties	Flag
+\ftnngbnum **	Document formatting properties	Flag
+\ftnngbnumd **	Document formatting properties	Flag
+\ftnngbnumk **	Document formatting properties	Flag
+\ftnngbnuml **	Document formatting properties	Flag
+\ftnnrlc 	Document formatting properties	Flag
+\ftnnruc 	Document formatting properties	Flag
+\ftnnzodiac **	Document formatting properties	Flag
+\ftnnzodiacd **	Document formatting properties	Flag
+\ftnnzodiacl **	Document formatting properties	Flag
+\ftnrestart	Document formatting properties	Flag
+\ftnrstcont 	Document formatting properties	Flag
+\ftnrstpg 	Document formatting properties	Flag
+\ftnsep	Document formatting properties	Destination
+\ftnsepc	Document formatting properties	Destination
+\ftnstart	Document formatting properties	Value
+\ftntj	Document formatting properties	Flag
+\fttruetype	Font Table	Flag
+\fvaliddos 	File Table	Flag
+\fvalidhpfs 	File Table	Flag
+\fvalidmac 	File Table	Flag
+\fvalidntfs 	File Table	Flag
+\g **	Font (Character) Formatting Properties	Destination
+\gcw **	Font (Character) Formatting Properties	Value
+\green	Color Table	Value
+\gridtbl **	Font (Character) Formatting Properties	Destination
+\gutter	Document formatting properties	Value
+\gutterprl *	Document formatting properties	Flag
+\guttersxn	Section Formatting Properties	Value
+\header	Headers and Footers	Destination
+\header	Headers and Footers	Destination
+\headerf	Headers and Footers	Destination
+\headerl	Headers and Footers	Destination
+\headery	Section Formatting Properties	Value
+\hich *	Associated Character Properties	Flag
+\highlight *	Highlighting	Value
+\hlfr **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\hlinkbase **	Information Group	Value
+\hlloc **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\hlsrc **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\horzdoc *	Document formatting properties	Flag
+\horzsect *	Section Formatting Properties	Flag
+\hr	Information Group	Value
+\htmautsp ***	Document formatting properties	Flag
+\htmlbase 	Appendix C: Control Words Introduced by Other Microsoft Products	Flag
+\htmlrtf	Appendix C: Control Words Introduced by Other Microsoft Products	Toggle
+\htmltag	Appendix C: Control Words Introduced by Other Microsoft Products	Destination
+\hyphauto 	Document formatting properties	Toggle
+\hyphcaps 	Document formatting properties	Toggle
+\hyphconsec 	Document formatting properties	Value
+\hyphhotz	Document formatting properties	Value
+\hyphpar 	Paragraph Formatting Properties	Toggle
+\i	Font (Character) Formatting Properties	Toggle
+\id	Information Group	Value
+\ilvl **	Paragraph Text	Value
+\impr **	Character Text	Toggle
+\info	Information Group	Destination
+\intbl	Paragraph Formatting Properties	Flag
+\itapN ***	Paragraph Formatting Properties	Value
+\ixe	Index Entries	Flag
+\jcompress *	Document formatting properties	Flag
+\jexpand *	Document formatting properties	Flag
+\jpegblip **	Pictures	Flag
+\jsksu ***	Document formatting properties	Flag
+\keep	Paragraph Formatting Properties	Flag
+\keepn	Paragraph Formatting Properties	Flag
+\kerning 	Font (Character) Formatting Properties	Value
+\keycode	Style Sheet	Destination
+\keywords	Information Group	Destination
+\ksulangN ***	Document formatting properties	Value
+\landscape	Document formatting properties	Flag
+\lang	Font (Character) Formatting Properties	Value
+\langfeN ***	Font (Character) Formatting Properties	Value
+\langfenpN ***	Font (Character) Formatting Properties	Value
+\langnpN ***	Font (Character) Formatting Properties	Value
+\lbrN ***	Special Characters	Symbol
+\lchars *	Document formatting properties	Destination
+\ldblquote	Special Characters	Symbol
+\level	Paragraph Formatting Properties	Value
+\levelfollowN **	List Table	Value
+\levelindentN **	List Table	Value
+\leveljcN **	List Table	Value
+\leveljcnN ***	List Table	Value
+\levellegalN **	List Table	Value
+\levelnfcN **	List Table	Value
+\levelnfcnN ***	List Table	Value
+\levelnorestartN **	List Table	Value
+\levelnumbers **	List Table	Destination
+\leveloldN **	List Table	Value
+\levelprevN **	List Table	Value
+\levelprevspaceN **	List Table	Value
+\levelspaceN **	List Table	Value
+\levelstartatN **	List Table	Value
+\leveltemplateidN ***	List Table	Value
+\leveltext **	List Table	Value
+\li	Paragraph Formatting Properties	Value
+\line	Special Characters	Symbol
+\linebetcol	Section Formatting Properties	Flag
+\linecont	Section Formatting Properties	Flag
+\linemod	Section Formatting Properties	Value
+\lineppage	Section Formatting Properties	Flag
+\linerestart	Section Formatting Properties	Flag
+\linestart	Document formatting properties	Value
+\linestarts	Section Formatting Properties	Value
+\linex	Section Formatting Properties	Value
+\linkself	Objects	Flag
+\linkstyles 	Document formatting properties	Flag
+\linkval *	Information Group	Value
+\linN ***	Paragraph Formatting Properties	Value
+\lisaN ***	Paragraph Formatting Properties	Value
+\lisbN ***	Paragraph Formatting Properties	Value
+\listhybrid ***	List Table	Flag
+\listidN **	List Table	Value
+\listname **	List Table	Destination
+\listoverridecountN **	List Table	Value
+\listoverrideformatN **	List Table	Value
+\listoverridestartN **	List Table	Value
+\listrestarthdnN **	List Table	Value
+\listsimpleN **	List Table	Value
+\listtemplateidN **	List Table	Value
+\listtext **	Paragraph Text	Destination
+\lnbrkrule ***	Document formatting properties	Flag
+\lndscpsxn	Section Formatting Properties	Flag
+\lnongrid *	Document formatting properties	Flag
+\loch *	Associated Character Properties	Flag
+\lquote	Special Characters	Symbol
+\ls **	List Table	Value
+\ltrch	Font (Character) Formatting Properties	Flag
+\ltrdoc	Document formatting properties	Flag
+\ltrmark	Special Characters	Symbol
+\ltrpar	Paragraph Formatting Properties	Flag
+\ltrrow	Table Definitions	Flag
+\ltrsect	Section Formatting Properties	Flag
+\lytcalctblwd ***	Document formatting properties	Flag
+\lytexcttp **	Document formatting properties	Flag
+\lytprtmet **	Document formatting properties	Flag
+\lyttblrtgr ***	Document formatting properties	Flag
+\mac	Character Set	Flag
+\macpict	Pictures	Flag
+\makebackup	Document formatting properties	Flag
+\manager *	Information Group	Destination
+\margb	Document formatting properties	Value
+\margbsxn	Section Formatting Properties	Value
+\margl	Document formatting properties	Value
+\marglsxn	Section Formatting Properties	Value
+\margmirror	Document formatting properties	Flag
+\margr	Document formatting properties	Value
+\margrsxn	Section Formatting Properties	Value
+\margt	Document formatting properties	Value
+\margtsxn	Section Formatting Properties	Value
+\mhtmltag	Appendix C: Control Words Introduced by Other Microsoft Products	Destination
+\min	Information Group	Value
+\mo	Information Group	Value
+\msmcap **	Document formatting properties	Flag
+\nestcell ***	Table Definitions	Symbol
+\nestrow ***	Table Definitions	Symbol
+\nesttableprops ***	Table Definitions	Destination
+\nextfile	Document formatting properties	Destination
+\nocolbal 	Document formatting properties	Flag
+\nocwrap *	Paragraph Formatting Properties	Flag
+\noextrasprl 	Document formatting properties	Flag
+\nofchars	Information Group	Value
+\nofcharsws **	Information Group	Value
+\nofpages	Information Group	Value
+\nofwords	Information Group	Value
+\nolead **	Document formatting properties	Flag
+\noline	Paragraph Formatting Properties	Flag
+\nolnhtadjtbl ***	Document formatting properties	Flag
+\nonesttables ***	Table Definitions	Destination
+\nonshppict **	Pictures	Flag
+\nooverflow *	Paragraph Formatting Properties	Flag
+\noproof ***	Font (Character) Formatting Properties	Flag
+\nosectexpand **	Font (Character) Formatting Properties	Flag
+\nosnaplinegrid **	Paragraph Formatting Properties	Flag
+\nospaceforul **	Document formatting properties	Flag
+\nosupersub 	Font (Character) Formatting Properties	Flag
+\notabind 	Document formatting properties	Flag
+\noultrlspc **	Document formatting properties	Flag
+\nowidctlpar 	Paragraph Formatting Properties	Flag
+\nowrap	Positioned Objects and Frames	Flag
+\nowwrap *	Paragraph Formatting Properties	Flag
+\noxlattoyen **	Document formatting properties	Flag
+\objalias	Objects	Destination
+\objalign	Objects	Value
+\objattph *	Objects	Flag
+\objautlink	Objects	Flag
+\objclass	Objects	Destination
+\objcropb	Objects	Value
+\objcropl	Objects	Value
+\objcropr	Objects	Value
+\objcropt	Objects	Value
+\objdata	Objects	Destination
+\object	Objects	Destination
+\objemb	Objects	Flag
+\objh	Objects	Value
+\objhtml **	Objects	Flag
+\objicemb	Objects	Flag
+\objlink	Objects	Flag
+\objlock	Objects	Flag
+\objname	Objects	Destination
+\objocx **	Objects	Flag
+\objpub	Objects	Flag
+\objscalex	Objects	Value
+\objscaley	Objects	Value
+\objsect	Objects	Destination
+\objsetsize	Objects	Flag
+\objsub	Objects	Flag
+\objtime	Objects	Destination
+\objtransy	Objects	Value
+\objupdate 	Objects	Flag
+\objw	Objects	Value
+\oldas ***	Document formatting properties	Flag
+\oldlinewrap **	Document formatting properties	Flag
+\operator	Information Group	Destination
+\otblrul 	Document formatting properties	Flag
+\outl	Font (Character) Formatting Properties	Toggle
+\outlinelevelN **	Paragraph Text	Value
+\overlay **	Paragraph Text	Flag
+\page	Special Characters	Symbol
+\pagebb	Paragraph Formatting Properties	Flag
+\panose **	Font Table	Destination
+\paperh	Document formatting properties	Value
+\paperw	Document formatting properties	Value
+\par	Special Characters	Symbol
+\pard	Paragraph Formatting Properties	Flag
+\pc	Character Set	Flag
+\pca	Character Set	Flag
+\pgbrdrb **	Document formatting properties	Flag
+\pgbrdrfoot **	Document formatting properties	Flag
+\pgbrdrhead **	Document formatting properties	Flag
+\pgbrdrl **	Document formatting properties	Flag
+\pgbrdroptN **	Document formatting properties	Value
+\pgbrdrr **	Document formatting properties	Flag
+\pgbrdrsnap **	Document formatting properties	Flag
+\pgbrdrt **	Document formatting properties	Flag
+\pghsxn	Section Formatting Properties	Value
+\pgnbidia ***	Section Formatting Properties	Flag
+\pgnbidib ***	Section Formatting Properties	Flag
+\pgnchosung **	Bullets and Numbering	Flag
+\pgncnum **	Bullets and Numbering	Flag
+\pgncont	Section Formatting Properties	Flag
+\pgndbnum *	Section Formatting Properties	Flag
+\pgndbnumd *	Section Formatting Properties	Flag
+\pgndbnumk **	Bullets and Numbering	Flag
+\pgndbnumt **	Bullets and Numbering	Flag
+\pgndec	Section Formatting Properties	Flag
+\pgndecd *	Section Formatting Properties	Flag
+\pgnganada **	Bullets and Numbering	Flag
+\pgngbnum **	Bullets and Numbering	Flag
+\pgngbnumd **	Bullets and Numbering	Flag
+\pgngbnumk **	Bullets and Numbering	Flag
+\pgngbnuml **	Bullets and Numbering	Flag
+\pgnhn 	Section Formatting Properties	Value
+\pgnhnsc 	Section Formatting Properties	Flag
+\pgnhnsh 	Section Formatting Properties	Flag
+\pgnhnsm 	Section Formatting Properties	Flag
+\pgnhnsn 	Section Formatting Properties	Flag
+\pgnhnsp 	Section Formatting Properties	Flag
+\pgnlcltr	Section Formatting Properties	Flag
+\pgnlcrm	Section Formatting Properties	Flag
+\pgnrestart	Section Formatting Properties	Flag
+\pgnstart	Document formatting properties	Value
+\pgnstarts	Section Formatting Properties	Value
+\pgnucltr	Section Formatting Properties	Flag
+\pgnucrm	Section Formatting Properties	Flag
+\pgnx	Section Formatting Properties	Value
+\pgny	Section Formatting Properties	Value
+\pgnzodiac **	Bullets and Numbering	Flag
+\pgnzodiacd **	Bullets and Numbering	Flag
+\pgnzodiacl **	Bullets and Numbering	Flag
+\pgwsxn	Section Formatting Properties	Value
+\phcol	Positioned Objects and Frames	Flag
+\phmrg	Positioned Objects and Frames	Flag
+\phpg	Positioned Objects and Frames	Flag
+\picbmp 	Pictures	Flag
+\picbpp 	Pictures	Value
+\piccropb	Pictures	Value
+\piccropl	Pictures	Value
+\piccropr	Pictures	Value
+\piccropt	Pictures	Value
+\pich	Pictures	Value
+\pichgoal	Pictures	Value
+\picprop **	Pictures	Destination
+\picscaled	Pictures	Flag
+\picscalex	Pictures	Value
+\picscaley	Pictures	Value
+\pict	Pictures	Destination
+\picw	Pictures	Value
+\picwgoal	Pictures	Value
+\plain	Font (Character) Formatting Properties	Flag
+\pmmetafile	Pictures	Value
+\pn 	Bullets and Numbering	Destination
+\pnacross 	Bullets and Numbering	Flag
+\pnaiu *	Bullets and Numbering	Flag
+\pnaiud *	Bullets and Numbering	Flag
+\pnaiueo **	Bullets and Numbering	Flag
+\pnaiueod **	Bullets and Numbering	Flag
+\pnb 	Bullets and Numbering	Toggle
+\pnbidia ***	Bullets and Numbering	Flag
+\pnbidib ***	Bullets and Numbering	Flag
+\pncaps 	Bullets and Numbering	Toggle
+\pncard 	Bullets and Numbering	Flag
+\pncf 	Bullets and Numbering	Value
+\pnchosung **	Bullets and Numbering	Flag
+\pncnum *	Bullets and Numbering	Flag
+\pndbnum *	Bullets and Numbering	Flag
+\pndbnumd **	Bullets and Numbering	Flag
+\pndbnumk **	Bullets and Numbering	Flag
+\pndbnuml **	Bullets and Numbering	Flag
+\pndbnumt **	Bullets and Numbering	Flag
+\pndec 	Bullets and Numbering	Flag
+\pndecd *	Bullets and Numbering	Flag
+\pnf 	Bullets and Numbering	Value
+\pnfs 	Bullets and Numbering	Value
+\pnganada **	Bullets and Numbering	Flag
+\pnganada **	Bullets and Numbering	Flag
+\pngblip **	Pictures	Flag
+\pngbnum **	Bullets and Numbering	Flag
+\pngbnumd **	Bullets and Numbering	Flag
+\pngbnumk **	Bullets and Numbering	Flag
+\pngbnuml **	Bullets and Numbering	Flag
+\pnhang 	Bullets and Numbering	Flag
+\pni 	Bullets and Numbering	Toggle
+\pnindent 	Bullets and Numbering	Value
+\pniroha *	Bullets and Numbering	Flag
+\pnirohad *	Bullets and Numbering	Flag
+\pnlcltr 	Bullets and Numbering	Flag
+\pnlcrm 	Bullets and Numbering	Flag
+\pnlvl 	Bullets and Numbering	Value
+\pnlvlblt 	Bullets and Numbering	Flag
+\pnlvlbody 	Bullets and Numbering	Flag
+\pnlvlcont 	Bullets and Numbering	Flag
+\pnnumonce 	Bullets and Numbering	Flag
+\pnord 	Bullets and Numbering	Flag
+\pnordt 	Bullets and Numbering	Flag
+\pnprev 	Bullets and Numbering	Flag
+\pnqc 	Bullets and Numbering	Flag
+\pnql 	Bullets and Numbering	Flag
+\pnqr 	Bullets and Numbering	Flag
+\pnrauthN **	Paragraph Text	Value
+\pnrdateN **	Paragraph Text	Value
+\pnrestart 	Bullets and Numbering	Flag
+\pnrnfcN **	Paragraph Text	Value
+\pnrnot **	Paragraph Text	Flag
+\pnrpnbrN **	Paragraph Text	Value
+\pnrrgbN **	Paragraph Text	Value
+\pnrstartN **	Paragraph Text	Value
+\pnrstopN **	Paragraph Text	Value
+\pnrxstN **	Paragraph Text	Value
+\pnscaps 	Bullets and Numbering	Toggle
+\pnseclvl 	Bullets and Numbering	Destination
+\pnsp 	Bullets and Numbering	Value
+\pnstart 	Bullets and Numbering	Value
+\pnstrike 	Bullets and Numbering	Toggle
+\pntext 	Bullets and Numbering	Destination
+\pntxta 	Bullets and Numbering	Destination
+\pntxtb 	Bullets and Numbering	Destination
+\pnucltr 	Bullets and Numbering	Flag
+\pnucrm 	Bullets and Numbering	Flag
+\pnul 	Bullets and Numbering	Toggle
+\pnuld 	Bullets and Numbering	Flag
+\pnuldash *	Bullets and Numbering	Flag
+\pnuldashd *	Bullets and Numbering	Flag
+\pnuldashdd *	Bullets and Numbering	Flag
+\pnuldb 	Bullets and Numbering	Flag
+\pnulhair *	Bullets and Numbering	Flag
+\pnulnone 	Bullets and Numbering	Flag
+\pnulth *	Bullets and Numbering	Flag
+\pnulw 	Bullets and Numbering	Flag
+\pnulwave *	Bullets and Numbering	Flag
+\pnzodiac **	Bullets and Numbering	Flag
+\pnzodiacd **	Bullets and Numbering	Flag
+\pnzodiacl **	Bullets and Numbering	Flag
+\posnegx 	Positioned Objects and Frames	Value
+\posnegy 	Positioned Objects and Frames	Value
+\posx	Positioned Objects and Frames	Value
+\posxc	Positioned Objects and Frames	Flag
+\posxi	Positioned Objects and Frames	Flag
+\posxl	Positioned Objects and Frames	Flag
+\posxo	Positioned Objects and Frames	Flag
+\posxr	Positioned Objects and Frames	Flag
+\posy	Positioned Objects and Frames	Value
+\posyb	Positioned Objects and Frames	Flag
+\posyc	Positioned Objects and Frames	Flag
+\posyil	Positioned Objects and Frames	Flag
+\posyin **	Paragraph Text	Flag
+\posyout **	Paragraph Text	Flag
+\posyt	Positioned Objects and Frames	Flag
+\prcolbl 	Document formatting properties	Flag
+\printdata 	Document formatting properties	Flag
+\printim	Information Group	Destination
+\private **	Document formatting properties	Destination
+\propname *	Information Group	Value
+\proptype *	Information Group	Value
+\psover	Document formatting properties	Flag
+\psz 	Document formatting properties	Value
+\pubauto	Macintosh Edition Manager Publisher Objects	Flag
+\pvmrg	Positioned Objects and Frames	Flag
+\pvpara	Positioned Objects and Frames	Flag
+\pvpg	Positioned Objects and Frames	Flag
+\pwdN	Appendix C: Control Words Introduced by Other Microsoft Products	Destination
+\pxe *	Index Entries	Destination
+\qc	Paragraph Formatting Properties	Flag
+\qd *	Paragraph Formatting Properties	Flag
+\qj	Paragraph Formatting Properties	Flag
+\ql	Paragraph Formatting Properties	Flag
+\qmspace *	Special Characters	Symbol
+\qr	Paragraph Formatting Properties	Flag
+\rdblquote	Special Characters	Symbol
+\red	Color Table	Value
+\result	Objects	Destination
+\revauth 	Font (Character) Formatting Properties	Value
+\revauthdelN **	Character Text	Value
+\revbar	Document formatting properties	Value
+\revdttm 	Font (Character) Formatting Properties	Value
+\revdttmdelN **	Character Text	Value
+\revised	Font (Character) Formatting Properties	Toggle
+\revisions	Document formatting properties	Flag
+\revprop	Document formatting properties	Value
+\revprot 	Document formatting properties	Flag
+\revtbl 	Track Changes (Revision Marks)	Destination
+\revtim	Information Group	Destination
+\ri	Paragraph Formatting Properties	Value
+\rinN ***	Paragraph Formatting Properties	Value
+\row	Special Characters	Symbol
+\rquote	Special Characters	Symbol
+\rsltbmp	Objects	Flag
+\rslthtml ***	Objects	Flag
+\rsltmerge	Objects	Flag
+\rsltpict	Objects	Flag
+\rsltrtf	Objects	Flag
+\rslttxt	Objects	Flag
+\rtf	RTF Version	Destination
+\rtlch	Font (Character) Formatting Properties	Flag
+\rtldoc	Document formatting properties	Flag
+\rtlgutter ***	Document formatting properties	Flag
+\rtlmark	Special Characters	Symbol
+\rtlpar	Paragraph Formatting Properties	Flag
+\rtlrow	Table Definitions	Flag
+\rtlsect	Section Formatting Properties	Flag
+\rxe	Index Entries	Destination
+\s	Paragraph Formatting Properties	Value
+\sa	Paragraph Formatting Properties	Value
+\saautoN ***	Paragraph Formatting Properties	Toggle
+\sautoupd **	Style Sheet	Flag
+\sb	Paragraph Formatting Properties	Value
+\sbasedon	Style Sheet	Value
+\sbautoN ***	Paragraph Formatting Properties	Toggle
+\sbkcol	Section Formatting Properties	Flag
+\sbkeven	Section Formatting Properties	Flag
+\sbknone	Section Formatting Properties	Flag
+\sbkodd	Section Formatting Properties	Flag
+\sbkpage	Section Formatting Properties	Flag
+\sbys	Paragraph Formatting Properties	Flag
+\scaps	Font (Character) Formatting Properties	Toggle
+\scompose ***	Style Sheet	Flag
+\sec	Information Group	Value
+\sect	Special Characters	Symbol
+\sectd	Section Formatting Properties	Flag
+\sectdefaultcl **	Section Formatting Properties	Value
+\sectexpandN **	Section Formatting Properties	Value
+\sectlinegridN **	Section Formatting Properties	Value
+\sectnum	Special Characters	Symbol
+\sectspecifycl **	Section Formatting Properties	Value
+\sectspecifygenN	Section Formatting Properties	Flag
+\sectspecifyl **	Section Formatting Properties	Value
+\sectunlocked 	Section Formatting Properties	Flag
+\shad	Font (Character) Formatting Properties	Toggle
+\shading	Paragraph Shading	Value
+\shidden **	Style Sheet	Flag
+\shift	Style Sheet	Flag
+\shpbottomN **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shpbxcolumn **	Word 97-2000 RTF for Drawing Objects (Shapes)	Flag
+\shpbxignore ***	Word 97-2000 RTF for Drawing Objects (Shapes)	Flag
+\shpbxmargin **	Word 97-2000 RTF for Drawing Objects (Shapes)	Flag
+\shpbxpage **	Word 97-2000 RTF for Drawing Objects (Shapes)	Flag
+\shpbyignore ***	Word 97-2000 RTF for Drawing Objects (Shapes)	Flag
+\shpbymargin **	Word 97-2000 RTF for Drawing Objects (Shapes)	Flag
+\shpbypage **	Word 97-2000 RTF for Drawing Objects (Shapes)	Flag
+\shpbypara **	Word 97-2000 RTF for Drawing Objects (Shapes)	Flag
+\shpfblwtxtN **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shpfhdrN **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shpgrp **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shpleftN **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shplidN **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shplockanchor **	Word 97-2000 RTF for Drawing Objects (Shapes)	Flag
+\shppict **	Pictures	Destination
+\shprightN **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shprslt **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shptopN **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shptxt **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shpwrkN **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shpwrN **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\shpzN **	Word 97-2000 RTF for Drawing Objects (Shapes)	Value
+\sl	Paragraph Formatting Properties	Value
+\slmult 	Paragraph Formatting Properties	Value
+\snext	Style Sheet	Value
+\softcol 	Special Characters	Flag
+\softlheight 	Special Characters	Value
+\softline 	Special Characters	Flag
+\softpage 	Special Characters	Flag
+\spersonal ***	Style Sheet	Flag
+\splytwnine ***	Document formatting properties	Flag
+\sprsbsp **	Document formatting properties	Flag
+\sprslnsp *	Document formatting properties	Flag
+\sprsspbf 	Document formatting properties	Flag
+\sprstsm **	Document formatting properties	Flag
+\sprstsp 	Document formatting properties	Flag
+\sreply ***	Style Sheet	Flag
+\staticval *	Information Group	Value
+\stextflow **	Section Text	Value
+\strike	Font (Character) Formatting Properties	Toggle
+\striked1 **	Character Text	Toggle
+\stylesheet	Style Sheet	Destination
+\sub 	Font (Character) Formatting Properties	Flag
+\subdocument 	Paragraph Formatting Properties	Value
+\subfontbysize *	Document formatting properties	Flag
+\subject	Information Group	Destination
+\super 	Font (Character) Formatting Properties	Flag
+\swpbdr 	Document formatting properties	Flag
+\tab	Special Characters	Symbol
+\tabsnoovrlp ***	Table Definitions	Flag
+\taprtl ***	Table Definitions	Flag
+\tb	Tabs	Value
+\tc	Table of Contents Entries	Destination
+\tcelld **	Table Definitions	Flag
+\tcf	Table of Contents Entries	Value
+\tcl	Table of Contents Entries	Value
+\tcn 	Table of Contents Entries	Flag
+\tdfrmtxtBottomN ***	Table Definitions	Value
+\tdfrmtxtLeftN ***	Table Definitions	Value
+\tdfrmtxtRightN ***	Table Definitions	Value
+\tdfrmtxtTopN ***	Table Definitions	Value
+\template	Document formatting properties	Destination
+\time **	Fields	Flag
+\title	Information Group	Destination
+\titlepg	Section Formatting Properties	Flag
+\tldot	Tabs	Flag
+\tleq	Tabs	Flag
+\tlhyph	Tabs	Flag
+\tlmdot *	Tabs	Flag
+\tlth	Tabs	Flag
+\tlul	Tabs	Flag
+\tphcol ***	Table Definitions	Flag
+\tphmrg ***	Table Definitions	Flag
+\tphpg ***	Table Definitions	Flag
+\tposnegxN ***	Table Definitions	Value
+\tposnegyN ***	Table Definitions	Value
+\tposxc ***	Table Definitions	Flag
+\tposxi ***	Table Definitions	Flag
+\tposxl ***	Table Definitions	Flag
+\tposxN ***	Table Definitions	Value
+\tposxo ***	Table Definitions	Flag
+\tposxr ***	Table Definitions	Flag
+\tposy ***	Table Definitions	Flag
+\tposyb ***	Table Definitions	Flag
+\tposyc ***	Table Definitions	Flag
+\tposyil ***	Table Definitions	Flag
+\tposyin ***	Table Definitions	Flag
+\tposyoutv ***	Table Definitions	Flag
+\tposyt ***	Table Definitions	Flag
+\tpvmrg ***	Table Definitions	Flag
+\tpvpara ***	Table Definitions	Flag
+\tpvpg ***	Table Definitions	Flag
+\tqc	Tabs	Flag
+\tqdec	Tabs	Flag
+\tqr	Tabs	Flag
+\transmf 	Document formatting properties	Flag
+\trautofitN ***	Table Definitions	Toggle
+\trbrdrb 	Table Definitions	Flag
+\trbrdrh 	Table Definitions	Flag
+\trbrdrl 	Table Definitions	Flag
+\trbrdrr 	Table Definitions	Flag
+\trbrdrt 	Table Definitions	Flag
+\trbrdrv 	Table Definitions	Flag
+\trftsWidthAN ***	Table Definitions	Value
+\trftsWidthBN ***	Table Definitions	Value
+\trftsWidthN ***	Table Definitions	Value
+\trgaph	Table Definitions	Value
+\trhdr 	Table Definitions	Flag
+\trkeep 	Table Definitions	Flag
+\trleft	Table Definitions	Value
+\trowd	Table Definitions	Flag
+\trpaddbN ***	Table Definitions	Value
+\trpaddfbN ***	Table Definitions	Value
+\trpaddflN ***	Table Definitions	Value
+\trpaddfrN ***	Table Definitions	Value
+\trpaddftN ***	Table Definitions	Value
+\trpaddlN ***	Table Definitions	Value
+\trpaddrN ***	Table Definitions	Value
+\trpaddtN ***	Table Definitions	Value
+\trqc	Table Definitions	Flag
+\trql	Table Definitions	Flag
+\trqr	Table Definitions	Flag
+\trrh	Table Definitions	Value
+\trspdbN ***	Table Definitions	Value
+\trspdfbN ***	Table Definitions	Value
+\trspdflN ***	Table Definitions	Value
+\trspdfrN ***	Table Definitions	Value
+\trspdftN ***	Table Definitions	Value
+\trspdlN ***	Table Definitions	Value
+\trspdrN ***	Table Definitions	Value
+\trspdtN ***	Table Definitions	Value
+\truncatefontheight	Document formatting properties	Flag
+\trwWidthAN ***	Table Definitions	Value
+\trwWidthBN ***	Table Definitions	Value
+\trwWidthN ***	Table Definitions	Value
+\twoonone *	Document formatting properties	Flag
+\tx	Tabs	Value
+\txe	Index Entries	Destination
+\ucN **	Unicode RTF	Value
+\ud **	Unicode RTF	Destination
+\ul	Font (Character) Formatting Properties	Toggle
+\ulcN ***	Font (Character) Formatting Properties	Value
+\uld	Font (Character) Formatting Properties	Flag
+\uldash *	Font (Character) Formatting Properties	Toggle
+\uldashd *	Font (Character) Formatting Properties	Toggle
+\uldashdd *	Font (Character) Formatting Properties	Toggle
+\uldb	Font (Character) Formatting Properties	Toggle
+\ulhair *	Font (Character) Formatting Properties	Toggle
+\ulhwave ***	Font (Character) Formatting Properties	Toggle
+\ulldash ***	Font (Character) Formatting Properties	Toggle
+\ulnone	Font (Character) Formatting Properties	Flag
+\ulth *	Font (Character) Formatting Properties	Toggle
+\ulth **	Character Text	Toggle
+\ulthd ***	Font (Character) Formatting Properties	Toggle
+\ulthdash ***	Font (Character) Formatting Properties	Toggle
+\ulthdashd ***	Font (Character) Formatting Properties	Toggle
+\ulthdashdd ***	Font (Character) Formatting Properties	Toggle
+\ulthldash ***	Font (Character) Formatting Properties	Toggle
+\ululdbwave ***	Font (Character) Formatting Properties	Toggle
+\ulw	Font (Character) Formatting Properties	Flag
+\ulwave *	Font (Character) Formatting Properties	Toggle
+\uN **	Unicode RTF	Value
+\up	Font (Character) Formatting Properties	Value
+\upr **	Unicode RTF	Destination
+\urtfN	Appendix C: Control Words Introduced by Other Microsoft Products	Destination
+\useltbaln ***	Document formatting properties	Flag
+\userprops *	Information Group	Destination
+{\v 10RIR7K} reference.
+\tab
+\'e4 ä
+XXX \v	Font (Character) Formatting Properties	Toggle
+\vern	Information Group	Value
+\version	Information Group	Value
+\vertalb	Section Formatting Properties	Flag
+\vertalc	Section Formatting Properties	Flag
+\vertalj	Section Formatting Properties	Flag
+\vertalt	Section Formatting Properties	Flag
+\vertdoc *	Document formatting properties	Flag
+\vertsect *	Section Formatting Properties	Flag
+\viewkindN **	Document formatting properties	Value
+\viewscaleN **	Document formatting properties	Value
+\viewzkN **	Document formatting properties	Value
+\wbitmap	Pictures	Value
+\wbmbitspixel	Pictures	Value
+\wbmplanes	Pictures	Value
+\wbmwidthbytes	Pictures	Value
+\webhidden ***	Font (Character) Formatting Properties	Flag
+\widctlpar	Paragraph Formatting Properties	Flag
+\widowctrl	Document formatting properties	Flag
+\windowcaption **	Document formatting properties	Value
+\wmetafile	Pictures	Value
+\wpeqn **	Fields	Flag
+\wpjst **	Document formatting properties	Flag
+\wpsp **	Document formatting properties	Flag
+\wraptrsp 	Document formatting properties	Flag
+\xe	Index Entries	Destination
+\xef	Index Entries	Value
+\yr	Information Group	Value
+\yxe **	Index Entries	Flag
+\zwbo *	Special Characters	Symbol
+\zwj	Special Characters	Symbol
+\zwnbo *	Special Characters	Symbol
+\zwnj	Special Characters	Symbol
+
+*/
+function parse_reference($input_file) {
+	print(" <a href=\"#");
+	while (($c = fgetc($input_file)) !== false && $c != "}" /* FIXME more */) {
+		// the actual reference.
+		print($c);
+	}
+	print("\">Go to body</a>");
+	return($c);
+}
+function process_ewc($input_file) {
+	// actually ends with "\}", just so you know.
+	// r"MVBMP2, ViewerBMP2, !neu002.bmp\}"
+	$s = "";
+	while (($c = fgetc($input_file)) !== false && $c != "}" /* FIXME more */) {
+		// the actual reference.
+		$s .= $c;
+	}
+	$parts = explode(", ", $s);
+	$file_name = array_pop($parts);
+	$file_name = str_replace("\\", "", $file_name);
+	$file_name = str_replace("!", "", $file_name); // not sure what the exclamation mark is doing in the file.
+	print("<img src=\"image/" . $file_name . "\" alt=\"" . $file_name . "\"></img>"); /* FIXME escape, get image dimensions */
+}
+function print_end_style() {
+	print("</span>");
+	return(false);
+}
+function print_change_style($styles, $in_style) {
+	if($in_style)
+		print_end_style();
+	// TODO handle the "doesn't change" case somehow.
+	if(count($styles) > 0) {
+		print("<span style=\"");
+		foreach($styles as $k => $v) {
+			print($k);
+			print(": ");
+			print($v);
+			print("; ");
+		}
+		print("\">");
+		return(true);
+	} else 
+		return(false);
+}
+function arrayCopy( array $array ) {
+	$result = array();
+	foreach( $array as $key => $val ) {
+		$result[$key] = $value;
+		/*if( is_array( $val ) ) {
+			$result[$key] = arrayCopy( $val );
+		} elseif ( is_object( $val ) ) {
+			$result[$key] = clone $val;
+		} else {
+			$result[$key] = $val;
+		}*/
+	}
+	return $result;
+}
+function is_destination_invisible($command) {
+	return($command == "fonttbl" || $command == "datastore" || $command == "themedata" || $command == "colortbl" || $command == "stylesheet" || $command == "colorschememapping");
+}
+// visible destinations would be: footnote, header, footer, pict, info, ???
+
+function process_RTF($input_file) {
+	$in_escape = false;
+	$count_braces = 0;
+	$magic = fgets($input_file, 7);
+	$command = "";
+	$codepage = 1252;
+	if($magic != "{\\rtf1") {
+		print "???\n";
+		return;
+	}
+	$in_style = false;
+	$stack = array();
+	$styles = array();
+	while (($c = fgetc($input_file)) !== false) {
+		$B_repeat = true;
+		$B_done = false;
+		while($B_repeat) {
+			$B_repeat = false;
+			if(!$in_escape) {
+				if($c == '\\') {
+					$in_escape = true;
+					$B_done = true;
+				} else if($c == '{') {
+					$count_braces = $count_braces + 1;
+					$B_done = true;
+					array_push($stack, array("styles" => $styles));
+					$styles = arrayCopy($styles);
+				} else if($c == '}') {
+					$count_braces = $count_braces - 1;
+					$B_done = true;
+					$a = array_pop($stack);
+					$styles = $a["styles"];
+					$in_style = print_change_style($styles, $in_style);
+				}
+			} else {
+				if($command == "" && $c == '*') {
+					$in_escape = false;
+					$command = "";
+					$arg = false;
+					$B_done = true;
+					// actually that's "{\*\colortbl etc}" (guaranteed to be "{\*").
+					// see is_destination_invisible($command) later.
+				} else if($command == "" && $c == '\'') {
+					print "&#x"; // TODO which encoding for codes > 127 ? spanish n with tilde is 241 there.
+					$c = fgetc($input_file); // HEX
+					print $c;
+					$c2 = fgetc($input_file); // HEX
+					print $c2;
+					print ";";
+					$in_escape = false;
+					$command = "";
+					$arg = false;
+					$B_done = true;
+				} else if($command == "" && $c == '{') {
+					$command .= $c;
+				} else if($command == "{" && $c == '\\') { // will be "\{\-", not a special command.
+					$command .= $c;
+				} else if($command == "{\\" && $c == '-') { // "\{\-", not a special command.
+					print("{");
+					$in_escape = false;
+					$command = "";
+					$arg = false;
+					$B_done = true;
+				} else if(($c >= 'a' && $c <= 'z') || ($c >= 'A' && $c <= 'Z')) {
+					$command .= $c;
+				} else {
+					$in_escape = false;
+					$arg = false;
+					if($c == ' ' || $c == '\r') {
+						$B_done = true;
+					} else if($c == '-' || ($c >= '0' && $c <= '9')) {
+						/* TODO "-" as first char in arg without any command */
+						$arg = "";
+						while($c == '-' || ($c >= '0' && $c <= '9')) {
+							$arg .= $c;
+							$c = fgetc($input_file);
+						}
+						if($c == ' ' || $c == '\r' || $c == '\n') {
+							$B_done = true;
+						} else {
+							$B_repeat = true;
+						}
+					} else {
+						$B_repeat = true; // FIXME WTF
+					}
+					
+					// command...
+					if($command == "par" || $command == "page" || $command == "line") {
+						if($in_style)
+							$in_style = print_end_style();
+						print "</p><p>";
+						$in_style = print_change_style($styles, $in_style);
+					} else if($command == "emdash") {
+						print "&mdash;";
+					} else if($command == "ansicpg") {
+						$codepage = $arg / 1;
+					} else if($command == "ansi") {
+						/* TODO */ /* TODO other charsets like mac pc(=437) pca(=850) or the font code page */
+					} else if($command == "v") {
+						$c = parse_reference($input_file);
+						$B_repeat = true;
+					} else if($command == "tab") {
+						/* TODO */
+						print(" ");
+					} else if($command == "{ewc") {
+						process_ewc($input_file);
+						$B_repeat = false;
+					} else if($command == "i") {
+						if($arg != "" && intval($arg) == 0)
+							unset($styles["font-style"]);
+						else
+							$styles["font-style"] = "italic";
+						$in_style = print_change_style($styles, $in_style);
+					} else if($command == "ul") { // TODO uldb, ulth, ulw, ulwave, uld, uldash, uldashd
+						if($arg != "" && intval($arg) == 0)
+							unset($styles["text-decoration"]);
+						else
+							$styles["text-decoration"] = "underline";
+						$in_style = print_change_style($styles, $in_style);
+					} else if($command == "ulnone") {
+						unset($styles["text-decoration"]);
+						$in_style = print_change_style($styles, $in_style);
+					} else if($command == "strike") { // TODO match with ul
+						if($arg != "" && intval($arg) == 0)
+							unset($styles["text-decoration"]);
+						else
+							$styles["text-decoration"] = "line-through";
+						$in_style = print_change_style($styles, $in_style);
+					} else if($command == "b") {
+						if($arg != "" && intval($arg) == 0)
+							unset($styles["font-weight"]);
+						else
+							$styles["font-weight"] = "bold";
+						$in_style = print_change_style($styles, $in_style);
+						// TODO scaps for small caps
+						// TODO caps for all caps
+						// TODO outl for outline
+						// TODO deleted* and v* (hidden)
+					} else if($command == "plain") {
+						// includes formatting flags, point size, language, font number. Reset font size to 12 pt.
+						$styles = array();
+						$in_style = print_change_style($styles, $in_style);
+						// TODO fs24 for font size
+					} else if($command != "") {
+						if(is_destination_invisible($command)) {
+							$styles["display"] = "none";
+							$in_style = print_change_style($styles, $in_style);
+						}
+						//print_r($command);
+						//print_r($arg);
+					}
+					$command = "";
+					$arg = false;
+				}
+			}
+		}
+		
+		if($count_braces < 2 && !$in_escape && !$B_done) { // FIXME
+			if($c == '<') {
+				print "&lt;";
+			} else if($c == '>') {
+				print "&gt;";
+			} else if($c == '&') {
+				print "&amp;";
+			} else if($c == '\n') {
+			} else if($c == '\r') {
+			} else {
+				print $c;
+			}
+		}
+	}
+	if($in_style)
+		print_end_style();
+}
+/* TODO 
+{\rtf1\ansi\deff0
+{\colortbl;\red0\green0\blue0;\red255\green0\blue0;}
+This line is the default color\line
+\cf2
+This line is red\line
+\cf1
+This line is the default color
+}
+
+TODO Unicode -> RTF
+
+if char <= 255:
+	\'f1 etc
+elif char <= 32767:
+	\uc1\u21487*
+elif char <= 65535:
+	\uc1\u(char-65535)* without ()
+*/
+
+$input_URL_name = $_SERVER["PATH_INFO"]; // TODO strip all the non-name parts.
+$input_file_name = $_SERVER["PATH_TRANSLATED"];
+$input_file = fopen($input_file_name,"r"); 
+//$input_file = fopen("../literature/PC-Intern/INTERN.RTF", "r");
+
+?><p><?php
+process_RTF($input_file);
+?></p>

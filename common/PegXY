@@ -1,0 +1,290 @@
+<?php
+require_once("common.INC.PHP");
+
+?>
+<?php
+
+class EOFException extends Exception {
+}
+
+function read_byte($input_file) {
+	$text = fgetc($input_file);
+	if($text == "") { // EOF
+		throw new EOFException();
+	}
+	return ord($text);
+}
+
+function note_XY_present_P($flags) {
+	return !($flags & 0x80);
+}
+
+function note_open_P($flags) {
+	return $flags & 0x40;
+}
+
+function note_software_open_P($flags) {
+	return !($flags & 0x20);
+}
+
+function header_last_P($header) {
+	return $header["next_pointer"] == 0xFFFFFF || $header["next_pointer"] == 0;
+}
+
+function header_timestamp($header) {
+	$first_2008 = 1199145600;
+	return $header["timestamp"] * 60 + $first_2008;
+	// FIXME: PHP timestamps are in GMT by convention, but I think this device keeps time in local time (not sure), so technically, we should fix it up here.
+	// FIXME: DST
+}
+
+function XY_pen_up_P($XY) {
+	return ($XY["Y"] == -32768) && ($XY["X"] == 0);
+}
+
+function read_field($input_file, $format_field) {
+	if(substr($format_field, 0, 1) == "<") {
+		$format_field = substr($format_field, 1);
+	}
+	if(substr($format_field, 0, 1) == "8") {
+		$count = 8;
+		$format_field = substr($format_field, 1);
+	} else if(substr($format_field, 0, 1) == "4") {
+		$count = 4;
+		$format_field = substr($format_field, 1);
+	} else {
+		$count = 1;
+	}
+	$result = array();
+	for(;$count > 0; --$count) {
+		$format_type = $format_field;
+		$format_base_type = strtoupper($format_type);
+		switch($format_base_type) {
+		case "B":
+			$value = read_byte($input_file);
+			$limit = 256;
+			break;
+		case "H":
+			$value = read_byte($input_file) + 256 * read_byte($input_file);
+			$limit = 65536;
+			break;
+		case "I":
+			$value = read_byte($input_file) + 256 * read_byte($input_file) + 65536 * read_byte($input_file) + 256 * 65536 * read_byte($input_file);
+			$limit = 65536 * 65536;
+			break;
+		case "R":
+			$value = read_byte($input_file) + 256 * read_byte($input_file) + 256 * 256 * read_byte($input_file);
+			$limit = 256 * 256 * 256;
+			break;
+		default:
+			die("invalid format field: " . $format_base_type);
+		}
+		if($format_base_type != $format_type) { /* signed */
+			if($value >= $limit / 2) {
+				$value = -($limit - $value);
+			}
+		}
+		array_push($result, $value);
+	}
+	return $result;
+}
+
+function read_binary($input_file, $format) {
+	$result = array();
+	foreach($format as $format_entry) {
+		$name = $format_entry[0];
+		$value = read_field($input_file, $format_entry[1]);
+		if(count($value) > 1)
+			$result[$name] = $value;
+		else
+			$result[$name] = $value[0];
+	}
+	return $result;
+}
+
+$header_format = array(
+	array("next_pointer", "<R"),
+	array("flags", "B"),
+	array("note_number", "B"),
+	array("total_note_number", "B"),
+	array("timestamp", "<i"),
+	array("__reserved", "4B"),
+);
+
+$XY_format = array(
+	array("X", "<h"),
+	array("Y", "<h"),
+);
+
+function load_Pegasus_note_header($input_file) {
+	global $header_format;
+	$header = read_binary($input_file, $header_format);
+	return $header;
+}
+
+function load_Pegasus_note_body($input_file, $header) {
+	global $XY_format;
+	$stroke = array();
+	$strokes = array();
+	$next_pointer = $header["next_pointer"];
+	if(note_XY_present_P($header["flags"])) {
+		while(1) {
+			if(ftell($input_file) == $next_pointer) { // the end.
+				break;
+			}
+			$XY = read_binary($input_file, $XY_format);
+			if(XY_pen_up_P($XY)) {
+				array_push($strokes, $stroke);
+				$stroke = array();
+				//break;
+			} else {
+				array_push($stroke, $XY);
+				$X = $XY["X"];
+				$Y = $XY["Y"];
+			}
+		}
+	}
+	return $strokes;
+}
+
+function calculate_view_box($strokes) {
+	$view_box = array(32767, 32767, -32768, -32768);
+	foreach($strokes as $stroke) {
+		foreach($stroke as $XY) {
+			$X = $XY["X"];
+			$Y = $XY["Y"];
+			if($X < $view_box[0])
+				$view_box[0] = $X;
+			if($X > $view_box[2])
+				$view_box[2] = $X;
+			if($Y < $view_box[1])
+				$view_box[1] = $Y;
+			if($Y > $view_box[3])
+				$view_box[3] = $Y;
+		}
+	}
+	return $view_box;
+}
+
+/* in place! */
+function rotate_strokes($strokes) {
+	/*$angle = -0.8;*/
+	$angle = -0.85;
+	$result = array();
+	foreach($strokes as $stroke) {
+		$new_stroke = array();
+		foreach($stroke as $XY) {
+			$oX = $XY["X"];
+			$oY = $XY["Y"];
+
+			$X = $oX * cos($angle) - $oY * sin($angle);
+			$Y = $oX * sin($angle) + $oY * cos($angle);
+
+			$XY["X"] = $X;
+			$XY["Y"] = $Y;
+			array_push($new_stroke, $XY);
+		}
+		array_push($result, $new_stroke);
+	}
+	return $result;
+}
+
+function load_Pegasus_headers($input_file) {
+	$magic = "PegXY\32\0\1";
+	if(fread($input_file, 8) != $magic)
+		die("not a PegXY file");
+
+	$result = array();
+	$header = load_Pegasus_note_header($input_file);
+	for($i = 0; 1 == 1; ++$i) {
+		$header["offset"] = ftell($input_file);
+		if(header_last_P($header)) // last, empty, page.
+			break;
+		array_push($result, $header);
+		fseek($input_file, $header["next_pointer"] + 8 /* magic size */);
+		$header = load_Pegasus_note_header($input_file);
+	}
+	return $result;
+}
+
+function load_Pegasus_body($input_file, $header) {
+	fseek($input_file, $header["offset"]);
+	$next_pointer = $header["next_pointer"];
+	if($next_pointer == 0xFFFFFF || $next_pointer == 0) // last, empty, page.
+		return array(false, array());
+	$strokes = load_Pegasus_note_body($input_file, $header);
+	return array($header, $strokes);
+}
+
+function has_next_page($x) {
+	return false;
+}
+
+$input_URL_name = $_SERVER["PATH_INFO"]; // TODO strip all the non-name parts.
+$input_file_name = $_SERVER["PATH_TRANSLATED"];
+$input_file = fopen($input_file_name,"r"); 
+$page_headers = load_Pegasus_headers($input_file);
+$page_number = false;
+@$page_number = $_GET["page"];
+if(!isset($page_number))
+	$page_number = false;
+if($page_number === false && count($page_headers) == 1) { // guess which...
+	$page_number = 0;
+}
+if($page_number === false) {
+	print_page_header();
+?>
+<ol>
+<?php
+	$page_number = 0;
+	foreach($page_headers as $header) {
+		$page_date = gmstrftime("%Y-%m-%d %H:%M:%S", header_timestamp($header));
+?>
+<li><a href="?page=<?= $page_number ?>"><?= htmlspecialchars($page_date) ?></a></li>
+<?php
+		$page_number = $page_number + 1;
+	}
+?>
+</ol>
+<?php
+} else {
+	$page_data = load_Pegasus_body($input_file, $page_headers[$page_number]);
+	header("Content-Type: image/svg+xml");
+	print '<?xml version="1.0"?>';
+?><?php
+
+	$header = $page_data[0];
+	$page = $page_data[1];
+	$page = rotate_strokes($page);
+	$view_box = calculate_view_box($page);
+	$page_date = gmstrftime("%Y-%m-%d %H:%M:%S", header_timestamp($header));
+?>
+      <svg width="21cm" height="30cm" viewBox='<?= $view_box[0] . " " . $view_box[1] . " " . ($view_box[2] - $view_box[0]) . " " . ($view_box[3] - $view_box[1]) ?>' xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny">
+        <title>Page <?= $page_number + 1 ?>, written on <?= $page_date ?></title>
+<?php
+$strokes = $page;
+foreach($strokes as $stroke) {
+	$SVG_stroke = "";
+	foreach($stroke as $XY) {
+		$X = $XY["X"];
+		$Y = $XY["Y"];
+		$SVG_stroke .= "L " . $X . " " . $Y . " ";
+	}
+	//$SVG_stroke .= "Z";
+	$SVG_stroke = "M" . substr($SVG_stroke, 1);
+?>
+        <path d="<?= $SVG_stroke ?>" fill="none" stroke="navy" stroke-width="5"/>
+<?php
+}
+?>
+<!--    M absolute moveto
+        m relative moveto
+        z close path
+        Z close path
+        L absolute lineto
+        l relative lineto
+      -->
+</svg>
+<?php
+}
+?>

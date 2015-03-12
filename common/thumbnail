@@ -1,0 +1,90 @@
+<?php
+
+$topdir = "../";
+
+require_once("common.INC.PHP");
+
+$uri = $_SERVER["REQUEST_URI"];
+if (substr($uri, 0, strlen("/common/thumbnail")) == "/common/thumbnail") {
+  $source_uri = substr($uri, strlen("/common/thumbnail"));
+} else {
+  $source_uri = "";
+}
+
+$source_path = urldecode($source_uri);
+
+if (substr($source_path, 0, 1) != "/") {
+  exit(1);
+}
+
+
+$source_path = ".." . $source_path;
+
+$mtime = filemtime($source_path);
+
+header("Last-Modified: " . gmdate("D, d M Y H:i:s", $mtime) . " GMT");
+
+if (isset($_SERVER['HTTP_IF_MODIFIED_SINCE'])) {
+  $if_modified_since = stripslashes($_SERVER['HTTP_IF_MODIFIED_SINCE']);
+} else {
+  $if_modified_since = false;
+}
+
+if ($if_modified_since !== false && $mtime <= $if_modified_since) {
+  header('HTTP/1.1 304 Not Modified');
+  exit();
+}
+
+// ETag?
+// HTTP_IF_NONE_MATCH (ETag)?
+
+$file_type = get_file_type($source_path);
+
+if ($file_type == "image/png") {
+  $original_image = imagecreatefrompng($source_path);
+} else if ($file_type == "image/jpeg") {
+  $original_image = imagecreatefromjpeg($source_path);
+} else if ($file_type == "image/gif") {
+  $original_image = imagecreatefromgif($source_path);
+} else {
+  $original_image = imagecreatefrompng("../common/icons/image.png");
+}
+
+$dest_width = 15 * 4 * 2;
+$dest_height = 13 * 4 * 2;
+
+$dest = imagecreatetruecolor($dest_width, $dest_height);
+$dummy_color = imagecolorallocate($dest, 0, 0, 0);
+//gdimagefilledrectangle($dest, 0, 0, $dest_width, $dest_height, $dummy_color);
+imagecolortransparent($dest, $dummy_color);
+
+$aspect_ratio = (imagesx($original_image)/imagesy($original_image));
+
+if($aspect_ratio < ($dest_width/$dest_height)) {
+  $thumbnail_width = $dest_height * $aspect_ratio;
+  $thumbnail_height = $dest_height;
+} else {
+  $thumbnail_height = $dest_width / $aspect_ratio;
+  $thumbnail_width = $dest_width;
+}
+
+$dest_x = ($dest_width - $thumbnail_width) / 2;
+$dest_y = ($dest_height - $thumbnail_height) / 2;
+
+imagecopyresampled($dest, $original_image, $dest_x, $dest_y, 0, 0, $thumbnail_width,
+  $thumbnail_height, imagesx($original_image), imagesy($original_image));
+
+//    Output handler
+function output_handler($img) {
+  global $file_type;
+   header('Content-Type: image/png');
+   header('Content-Length: ' . strlen($img));
+   return $img;
+}
+
+//    Image output
+ob_start("output_handler");
+imagepng($dest, null, 9);
+ob_end_flush();
+
+?>

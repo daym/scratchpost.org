@@ -1,0 +1,26 @@
+<?php
+
+$topdir = $_SERVER["DOCUMENT_ROOT"];
+if (substr($topdir, -1) != "/") {
+	$topdir = $topdir . "/";
+}
+
+$parts = explode("#", $_SERVER["REQUEST_URI"], 2);
+$URI = $parts[0];
+$parts = explode("?", $_SERVER["REQUEST_URI"], 2);
+$URI = $parts[0];
+if (substr($URI, -strlen("/Index.PHP")) == "/Index.PHP") {
+	$URI = substr($URI, 0, strlen($URI) - strlen("/Index.PHP"));
+}
+
+chdir($topdir . urldecode($URI));
+
+require_once($topdir . "common/common.INC.PHP");
+
+$show_all_images_completely = true;
+
+print_page_header();
+
+// automatic: print_page_footer();
+
+?>

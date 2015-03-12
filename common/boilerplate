@@ -1,0 +1,6 @@
+<?php
+
+require_once("common.INC.PHP");
+print_page_header();
+
+?>

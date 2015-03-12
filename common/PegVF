@@ -1,0 +1,312 @@
+<?php
+
+// TODO: 
+class RGBQUAD {
+	const SIZE = 16;
+	public $r;
+	public $g;
+	public $b;
+	public $reserved;
+
+	public function __construct($data) {
+		if($data) {
+			list($this->r, $this->g, $this->b, $this->reserved) = unpack('v4', $data);
+		}
+	}
+}
+
+$palette = array(); for($i=0; $i<256; $i++) $palette[$i] = new RGBQUAD(fread($file_handle, RGBQUAD::SIZE)); printf("Colour #0 is %02X%02X%02X.\n", $palette[0]->r, $palette[0]->g, $palette[0]->b);
+
+$wNullTag = 0;
+
+#wNewClassTag = 0xFFFF
+$wNewClassTag = 0x80007FFF; # 32-bit expanded.
+$wOldClassTag = 0x8000;
+$wBigClassTag = 0x80000000;
+$wClassTagMask = 0x7FFFFFFF;
+
+function is_class_tag_P($tag) {
+	return (tag & wBigClassTag) != 0;
+}
+
+class Archive {
+	public function __construct($input_file, $classes) {
+		$this->input_file = $input_file;
+		$this->things = array(None); # PID -> instance|class
+		$this->classes = $classes;
+	}
+
+	function read_PID() {
+		$f = $this->input_file;
+		$PID = unpack("v", fread($f, 2));
+		$PID = $PID[1];
+		if($PID == 0x7FFF) {
+			$PID = unpack("V", fread($f, 4));
+			$PID = $PID[1];
+		}
+		return $PID;
+	}
+
+	function read_schema_number() {
+		$result = unpack("v", fread($this->input_file, 2));
+		return $result[1];
+	}
+
+	function read_tag() {
+		$f = $this->input_file;
+		$tag = unpack("v", fread($f, 2));
+		$tag = $tag[1];
+		if($tag == 0x7FFF) {
+			$tag = unpack("V", fread($f, 4));
+			$tag = $tag[1];
+		} else {
+			$tag = ((tag & wOldClassTag) << 16) | (tag & 0x7FFF); # 32-bit class tag.
+		}
+		return $tag;
+	}
+
+	function read_class_reference($tag) {
+		$f = $this->input_file;
+		assert(is_class_tag_P($tag));
+		if($tag == wNewClassTag) {
+			$schema_number = $this->read_schema_number(); # 2
+			$count_1 = unpack("v", fread($f, 2));
+			$count_1 = $count_1[1];
+			$class_name = fread($f, $count_1);
+			assert(len($class_name) == $count_1);
+			# TODO check schema.
+			array_push($this->things, $class_name);
+			return class_name; # FIXME return class it$this->
+		} else {
+			$class_PID = ($tag & wClassTagMask);
+			return $this->things[$class_PID];
+		}
+	}
+
+	function read_double() {
+		$result = unpack("d", fread($this->input_file, 8));
+		return $result[1]; // FIXME endianness
+	}
+
+	function read_float() {
+		$result = unpack("f", fread($this->input_file, 4));
+		return $result[1]; // FIXME endianness
+	}
+
+	function read_LONG() {
+		$result = unpack("l", fread($this->input_file, 4));
+		return $result[0]; // FIXME endianness
+	}
+
+	function read_WORD() {
+		$result = unpack("v", fread($this->input_file, 2));
+		return $result[1];
+	}
+
+	function read_byte() {
+		$result = unpack("C", fread($this->input_file, 1));
+		return $result[1];
+	}
+
+	function read_DWORD() {
+		$result = unpack("V", fread($this->input_file, 4));
+		return $result[1];
+	}
+
+	function read_SHORT() {
+		$result = struct.unpack("<h", fread($this->input_file, 2));
+		return $result[1];
+	}
+
+	function read_string_length() {
+		$f = $this->input_file;
+		$count_1 = unpack("C", fread($f, 1));
+		$count_1 = $count_1[1];
+		if($count_1 < 0xff)
+			return $count_1;
+		$count_1 = unpack("v", fread($f, 1));
+		$count_1 = $count_1[1];
+		if($count_1 == 0xfffe)
+			# UNICODE string (length will follow)
+			return false;
+		else if($count_1 < 0xffff)
+			return $count_1;
+		$count_1 = unpack("V", fread($f, 1));
+		$count_1 = $count_1[1];
+		return $count_1;
+	}
+
+	function read_CString() {
+		$f = $this->input_file;
+		$count_1 = $this->read_string_length();
+		if($count_1 === false) {
+			# UNICODE
+			$count_1 = $this->read_string_length();
+		}
+		$data = fread($f, $count_1);
+		# TODO UNICODE decode/encode?
+		return $data;
+	}
+
+	function read_object() {
+		$tag = $this->read_tag();
+		if(!is_class_tag_P($tag)) {
+			if(tag >= len($this->things))
+				print "???"; # FIXME exception
+			return $this->things[tag];
+		} else {
+			$class_ = $this->read_class_reference(tag);
+			$instance = new $this->classes[$class_]();
+			array_push($this->things, $instance);
+			return $this->deserialize_element($class_, $instance);
+		}
+	}
+
+	function read_count() {
+		$f = $this->input_file;
+		$count_1 = unpack("v", fread($f, 2));
+		$count_1 = $count_1[1];
+		if($count_1 != 0xFFFF) {
+			return $count_1;
+		}
+		$count_1 = unpack("V", fread($f, 4));
+		$count_1 = $count_1[1];
+		return $count_1;
+	}
+
+	function deserialize_element($element_type, $existing_instance = false) {
+		if(array_key_exists($this->classes, $element_type)) {
+			$class_ = $this->classes[$element_type];
+			if($existing_instance === false)
+				$existing_instance = new $class_();
+			foreach($class_->definition as $name => $type_) {
+				$value = $this->deserialize_element(type_);
+				setattr($existing_instance, $name, $value);
+			}
+			return $existing_instance;
+		} else if($element_type.endswith("[]")) {
+			return $this->read_CArray(substr($element_type, 0, strlen($element_type) - 2));  // FIXME is that correct?
+		} else {
+			$functions = array("B" => $this->read_byte, 
+			                   "<H" => $this->read_WORD,
+			                   "<l" => $this->read_LONG,
+			                   "<h" => $this->read_SHORT,
+			                   "<I" => $this->read_DWORD,
+			                   "object" => $this->read_object);
+			$existing_instance = $functions[$element_type]();
+			return $existing_instance;
+		}
+	}
+
+	function read_CArray($element_type) {
+		$result = array();
+		$count_1 = $this->read_count();
+		for($i = 0; $i < $count_1; ++$i) {
+			$item = $this->deserialize_element($element_type);
+			array_push($result, $item);
+		}
+		return $result;
+	}
+
+	function read_CMap($key_type, $value_type) {
+		$result = array();
+		$count_1 = $this->read_count();
+		for($i = 0; $i < $count_1; ++$i) {
+			$key = $this->deserialize_element($key_type);
+			$value = $this->deserialize_element($value_type);
+			$result[$key] = $value;
+		}
+		return $result;
+	}
+}
+
+class CPoint {
+	const definition = array(
+		"X" => "<h",
+		"Y" => "<h",
+	);
+	function __repr__() {
+		return "CPoint(%r)" % $this->__dict__
+	}
+
+	function __getitem__($index) {
+		assert($index == 0 || $index == 1);
+		if($index == 1)
+			return $this->Y;
+		else
+			return $this->X;
+	}
+}
+
+# 00  00  43  fc  f9 fc  72  fd  95  fb  00  00  00  00  00  01  00  a5 00
+# (a5 00 being the count of the array that follows.)
+class CStroke {
+	const definition = array(
+		("__junk_1" => "B"),
+		("__junk_2" => "<I"),
+		("__junk_3" => "<I"),
+		("__junk_4" => "<I"),
+		("pen_width" => "<I"), # also wrong
+		("points" => "CPoint[]"),
+	);
+
+	function __repr__() {
+		return "CStroke(%r)" % $this->__dict__;
+	}
+
+	function __str__() {
+		return "CStroke(%r)" % $this->__dict__;
+	}
+}
+
+class CPage {
+	const definition = array(
+		"strokes" => "CStroke[]",
+	);
+
+
+	function __repr__() {
+		return "CPage(**%r)" % $this->__dict__;
+	}
+}
+
+class PGSSNOTE {
+	const definition = array();
+}
+
+class PGSSCONT {
+	const definition = array(
+		"notes" => "PGSSNOTE[]",
+	);
+}
+	
+function parse($f) {
+	assert(f.read(14) == "PGSSDATA\0\0\0\3\0\n");
+	# \4\3 is 772.
+	assert(f.read(34) == "\4\3MobileDigitalScribe\0\0\0\0\0\0\0\0\0\0\0\0\0");
+	assert(f.read(10) == "PGSSCONT\1\0");
+	# could already be a count.
+	assert(f.read(8) == "PGSSNOTE");
+	assert(f.read(8) == "PGSSNOTE");
+	assert(f.read(4) == "\1\0\0\0");
+	assert(f.read(2) == "\x08\xEC");
+	assert(f.read(2) == "VK");
+
+	$archive_1 = new Archive(f, array(
+		"CStroke" => CStroke,
+		"CPage" => CPage,
+		"PGSSCONT" => PGSSCONT,
+		"CPoint" => CPoint,
+	))
+
+	$name = $archive_1.read_CString(); # date, name
+	assert(f.read(8) == "\x0d\xee\xff\xff\xf9\xfc\xff\xff");
+	assert(f.read(16) == "+\x12\0\0\xce\xca\xff\xff\0\0\0\0\0\0\0\0");
+	assert(f.read(12) == "\0\0\0\0\0\0\0\0\0\0\0\0");
+	#assert(f.read(2) == "\x08\x02")
+
+	$strokes = archive_1.read_CArray("object");
+	return array($name, $strokes);
+}
+
+?>
