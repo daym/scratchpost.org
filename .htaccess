@@ -1,0 +1,25 @@
+
+Redirect permanent /patches http://WWW.Scratchpost.ORG/software/patch
+Redirect permanent /patch http://WWW.Scratchpost.ORG/software/patch
+Redirect permanent /physics http://WWW.Scratchpost.ORG/science/physics
+Redirect permanent /hacks http://WWW.Scratchpost.ORG/software
+Redirect permanent /hack http://WWW.Scratchpost.ORG/software
+Redirect permanent /forum-to-news-gateway http://WWW.Scratchpost.ORG/software/forum-to-news-gateway
+
+AddHandler application/x-httpd-php .PHP
+Action application/x-httpd-php /cgi-system/php5.cgi
+DirectoryIndex index.PHP index.HTML /common/Index.PHP
+ErrorDocument 404 /common/404
+<Files "p">
+	SetHandler cgi-script
+</Files>
+<Files "p2">
+	SetHandler fastcgi-script
+</Files>
+
+RewriteEngine On
+RewriteBase /
+RewriteRule ^dispatch\.fcgi/ - [L]
+RewriteRule ^.*$ dispatch.fcgi/$0 [L]
+RewriteCond %{REQUEST_URI} ^/(stats/|missing\.html|failed_auth\.html) [NC]
+RewriteRule . - [L]
