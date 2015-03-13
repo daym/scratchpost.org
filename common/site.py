@@ -146,7 +146,7 @@ def getEntries2(containerName):
         yield entry
     try:
         webseealso = loadStrings("%s/.webseealso" % (containerName, ))
-        webseealso = map(lambda line: line.split(" ", 1), webseealso) # URL, description
+        webseealso = map(lambda line: line.split("\t", 1), webseealso) # URL, description
     except:
         webseealso = []
     for URL, description in webseealso:
